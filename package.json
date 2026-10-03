@@ -1,0 +1,6 @@
+{
+  "name": "minecraft-agent-lab", "version": "0.1.0", "private": true, "type": "module",
+  "engines": {"node": ">=22"},
+  "scripts": {"start": "node --env-file-if-exists=.env environment/api.mjs", "test": "node --test", "agent": "node --env-file-if-exists=.env scripts/agent.mjs", "planned": "node --env-file-if-exists=.env scripts/planned-agent.mjs", "qwen:smoke": "node --env-file-if-exists=.env scripts/qwen-smoke.mjs", "server": "node --env-file-if-exists=.env scripts/start-server.mjs"},
+  "dependencies": {"mineflayer": "4.37.1", "mineflayer-pathfinder": "2.4.5"}
+}
