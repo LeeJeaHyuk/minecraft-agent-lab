@@ -39,6 +39,33 @@ Join `localhost:25565` with a separately installed Minecraft Java 1.21.1 client 
 
 ## Models
 
+### Models used in the recorded experiments
+
+| Model | Role | Tested configuration |
+|---|---|---|
+| **Qwen3.8-27B** | Long-term goals, ordered subgoals, construction/storage planning and public progress statements | Served as `qwen3.8-27b` through an OpenAI-compatible endpoint; [ROCMFP4-COHERENT GGUF variant](https://huggingface.co/hugobugo34/Qwen3.8-27B-ROCmFPX-GGUF), request-level thinking disabled |
+| **[jaredpalmer/kev-4b](https://huggingface.co/jaredpalmer/kev-4b)** | Chooses among bounded, state-dependent actions, including combat and retreat candidates | Official Kev-4B adapter/head, BF16, without additional quantization |
+| **[Qwen/Qwen3.5-4B-Base](https://huggingface.co/Qwen/Qwen3.5-4B-Base)** | Kev's underlying backbone | Loaded as part of Kev; not a separate long-term planner |
+
+The tested planner GGUF revision was `27b12de0c9cb053f448fdea885713d8802ccbc3b`, using `Qwen3.8-27B-ROCMFP4-COHERENT.gguf`. The tested Kev revision was `6cfce5c2fa4b4bd64026336ab649c5ca78857d52`, with backbone revision `1001bb4d826a52d1f399e183466143f4da7b741b`. These identify the tested model artifacts, not a requirement that every deployment use the same planner.
+
+Qwen defines the plan; Kev selects legal actions; Mineflayer executes and checks their effects. Immediate damage interruption is local safety control and does not wait for either model. Both policies use structured state rather than screenshots in these experiments.
+
+### Observed results with Qwen3.8 + Kev-4B
+
+These are functional observations from development runs in Minecraft Java 1.21.1, not a benchmark or a measured success rate.
+
+| Experiment | Observed result | Scope and limitations |
+|---|---|---|
+| Collection and crafting | Collected oak logs and crafted planks. A Normal-difficulty night run collected 2 logs, increased planks from 2 to 10, and returned to the closed house without further health loss. | One collection action timed out after obtaining an item; the runner continued using observed inventory. |
+| House and shelter | Built a small house; installed a door and four torches; verified return to the interior and a closed entrance. | Preparation included deaths and operator daytime assistance. This is not proof of fully autonomous survival. |
+| Chest organization | Crafted/placed a chest, deposited excess items, and read back the stored contents. | Depends on local task state and available materials. |
+| Iron equipment | Mined and smelted iron; crafted and verified an iron pickaxe, iron sword, shield, and all four iron armor parts. Actual equipped slots were checked. | Preparation required gear recovery after deaths and operator daytime/nearby-hostile removal assistance. |
+| Combat and continuation | In natural nighttime encounters, responded to a spider and two zombies. After the zombies were handled, resumed the interrupted return-home action, closed the door, and ate collected food. | The initial interrupted hunt exposed a completion-detection bug, subsequently fixed. Later creeper damage reduced health to 6.63/20; nighttime survival is not robust. |
+| Observation and recording | Recorded real task execution through OBS; verified spectator follow, game chat, model labels and recording start/stop ownership. | Camera occlusion and capture setup remain limitations. Recordings and player identities are private and are not published. |
+
+The published snapshot passes **62 automated tests**. Tests cover contracts and regressions; they do not establish general gameplay competence. No Ender Dragon completion is claimed for this project. Raw development logs and recordings are deliberately excluded for privacy, so the table is a reported validation summary rather than a public evaluation dataset.
+
 Configure `QWEN_BASE_URL`, `QWEN_MODEL`, and optional `QWEN_API_KEY` in your private `.env`. The planner supports an OpenAI-compatible chat endpoint; local or remote hosting is your choice. For an SSH tunnel, substitute your own host and remote endpoint:
 
 ```sh
