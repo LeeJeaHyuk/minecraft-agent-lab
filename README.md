@@ -13,6 +13,24 @@ Minecraft 1.21.1 → Mineflayer → loopback HTTP environment API → manual, ra
 - Public progress messages labeled by model; these are explicit public utterances, not private model reasoning.
 - Optional spectator follow camera and OBS task recording.
 
+## Autonomous goal execution
+
+With Minecraft, the environment API, Qwen and Kev running, submit a single goal:
+
+```powershell
+npm run autonomous -- "돌 삽 1개를 제작한 뒤 집으로 복귀해 문을 닫고 대기하라."
+```
+
+`POST /tasks` starts a server-owned execution loop immediately. The CLI only submits and observes the job; it does not supply per-step instructions. `--detach` exits the CLI while the API keeps working. `GET /tasks` lists jobs, `GET /tasks/<id>` shows the plan and actual action results, `POST /tasks/<id>/cancel` cancels, and `npm run autonomous -- --resume <id>` resumes an interrupted or blocked job from its original goal and verified checkpoint.
+
+Qwen chooses prerequisites, subgoals, supported configuration operations, progress reviews, failure recovery and replanning. Kev chooses the next action from current legal candidates matching Qwen's active subgoal. The deterministic executor validates targets, inventory changes, construction geometry, equipment and completion predicates. Immediate damage interruption and bounded safety control remain local. Existing task-specific scripts are retained as development utilities; they are not invoked by this autonomous loop.
+
+The first accepted Qwen plan declares observable final objectives. Replanning may change intermediate steps, but cannot lower those objectives. A model's `complete` response is rejected unless current observations satisfy all final conditions. Every failed action, unavailable candidate set, repeated lack of observed progress and periodic review returns control to Qwen. Configuration receipts prevent repeated side effects. Model failures, unsupported goals, ownership changes and action/time/replan limits produce an explicit `blocked` result rather than an invented successful outcome.
+
+Jobs and JSONL events persist under ignored `.runtime/autonomy/`. Restarted jobs are marked interrupted and require explicit resume; they do not silently restart world changes. Cancellation waits for the current bounded action/model request to settle. Running only `POST /goal` remains a low-level state-setting API; use `/tasks` to execute a user command. API and model processes must remain running.
+
+Supported operations include collection/crafting, existing food/hunting and equipment skills, chest plans, verified room construction from a model-selected palette, the current aligned-annex corridor, and safe-home setup. This does not provide arbitrary Minecraft skills, general city design, guaranteed survival, arbitrary code execution, or administrator commands. In particular, the corridor geometry retains its existing alignment limits, cooking food is not implemented, and the initial translation of a natural-language goal into predicates still depends on Qwen. Review task status when a goal exceeds these capabilities.
+
 ## Setup
 
 Requires Node.js 22+ and Java 21. Model inference has separate runtime requirements.
@@ -53,10 +71,11 @@ Qwen defines the plan; Kev selects legal actions; Mineflayer executes and checks
 
 ### Observed results with Qwen3.8 + Kev-4B
 
-These are functional observations from development runs in Minecraft Java 1.21.1, not a benchmark or a measured success rate.
+These are functional observations from development runs in Minecraft Java 1.21.1, not a benchmark or a measured success rate. Except for the autonomous goal service row, these results used earlier task-specific runners and assisted development.
 
 | Experiment | Observed result | Scope and limitations |
 |---|---|---|
+| Autonomous goal service | A single goal produced a stone shovel and returned the bot to its closed house: 4 successful Kev-selected actions and 2 Qwen planning/review calls. The submitting CLI exited while the server continued execution. | No intermediate manual instructions in this clean run. Complex autonomous construction and recovery remain unvalidated with this controller. |
 | Collection and crafting | Collected oak logs and crafted planks. A Normal-difficulty night run collected 2 logs, increased planks from 2 to 10, and returned to the closed house without further health loss. | One collection action timed out after obtaining an item; the runner continued using observed inventory. |
 | House and shelter | Built a small house; installed a door and four torches; verified return to the interior and a closed entrance. | Preparation included deaths and operator daytime assistance. This is not proof of fully autonomous survival. |
 | Chest organization | Crafted/placed a chest, deposited excess items, and read back the stored contents. | Depends on local task state and available materials. |
@@ -64,7 +83,7 @@ These are functional observations from development runs in Minecraft Java 1.21.1
 | Combat and continuation | In natural nighttime encounters, responded to a spider and two zombies. After the zombies were handled, resumed the interrupted return-home action, closed the door, and ate collected food. | The initial interrupted hunt exposed a completion-detection bug, subsequently fixed. Later creeper damage reduced health to 6.63/20; nighttime survival is not robust. |
 | Observation and recording | Recorded real task execution through OBS; verified spectator follow, game chat, model labels and recording start/stop ownership. | Camera occlusion and capture setup remain limitations. Recordings and player identities are private and are not published. |
 
-The published snapshot passes **62 automated tests**. Tests cover contracts and regressions; they do not establish general gameplay competence. No Ender Dragon completion is claimed for this project. Raw development logs and recordings are deliberately excluded for privacy, so the table is a reported validation summary rather than a public evaluation dataset.
+The published snapshot passes **73 automated tests**. Tests cover contracts and regressions; they do not establish general gameplay competence. No Ender Dragon completion is claimed for this project. Raw development logs and recordings are deliberately excluded for privacy, so the table is a reported validation summary rather than a public evaluation dataset.
 
 Configure `QWEN_BASE_URL`, `QWEN_MODEL`, and optional `QWEN_API_KEY` in your private `.env`. The planner supports an OpenAI-compatible chat endpoint; local or remote hosting is your choice. For an SSH tunnel, substitute your own host and remote endpoint:
 

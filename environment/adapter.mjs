@@ -8,6 +8,7 @@ import {combatActions,executeCombat} from './combat.mjs';
 import {installDamageReflex} from './damage-reflex.mjs';
 import {resolveThreats} from './task-safety.mjs';
 import {visibleThreats} from './combat.mjs';
+import {corridorActions} from './annex.mjs';
 import {equipment,equipmentActions,executeEquipment} from './equipment.mjs';
 import {foodActions,executeFood,completedHuntAfterDefense} from './food.mjs';
 import {homeActions,executeHome,inspectHome,prepareHomeDeparture,allowOpenDoorPassage,installDoorNavigation} from './home.mjs';
@@ -60,7 +61,7 @@ export class MinecraftEnvironment {
         actions.push({id:`mine:${block.position.x}:${block.position.y}:${block.position.z}`,skill:'mine_block',arguments:point(block.position)});if(actions.filter(a=>a.skill==='mine_block').length>=4)break;
       }
     }
-    return [...actions,...equipmentActions(b,this.home),...foodActions(b),...homeActions(b,this.home),...combatActions(b),...extraActions(b,resourceBlocks(b)),...storageActions(b,this.storagePlan,this.construction),...(this.construction?constructionActions(b,this.construction):[])].filter(a=>{
+    return [...actions,...equipmentActions(b,this.home),...foodActions(b),...homeActions(b,this.home),...combatActions(b),...extraActions(b,resourceBlocks(b)),...storageActions(b,this.storagePlan,this.construction),...(this.construction?constructionActions(b,this.construction):[]),...corridorActions(b,this.annexCorridor)].filter(a=>{
       if(!['mine_block','mine_and_collect'].includes(a.skill))return true;const p=a.arguments,block=b.blockAt(b.entity.position.clone().set(p.x,p.y,p.z));
       return block&&!(b.pathfinder.movements.exclusionAreasBreak??[]).some(fn=>fn(block)>=100);
     });
@@ -107,7 +108,7 @@ export class MinecraftEnvironment {
     const assertActive=()=>{if(cancelled || this.generation!==generation || this.bot!==bot)throw new Error('interrupted');};
     try {
       const execute=async()=>{
-        if(this.home&&['move_to','explore','approach_resource','mine_and_collect','collect_item','approach_build_site','withdraw_item','deposit_item','inspect_chest','hunt_food'].includes(candidate.skill))await prepareHomeDeparture(bot,this.home,assertActive);
+        if(this.home&&['move_to','explore','approach_resource','mine_and_collect','collect_item','approach_build_site','place_block','clear_build_cell','withdraw_item','deposit_item','inspect_chest','hunt_food'].includes(candidate.skill))await prepareHomeDeparture(bot,this.home,assertActive);
         if(candidate.skill==='wait')await delay(candidate.arguments.duration_ms);
         else if(candidate.skill==='move_to'){
           const goal=new goals.GoalBlock(candidate.arguments.x,candidate.arguments.y,candidate.arguments.z);await bot.pathfinder.goto(goal);assertActive();
@@ -117,7 +118,7 @@ export class MinecraftEnvironment {
         else if(candidate.skill==='mine_block'){
           const p=candidate.arguments;const block=this.bot.blockAt(this.bot.entity.position.clone().set(p.x,p.y,p.z));
           if(!block || block.name==='air')throw new Error('target_not_found');await this.bot.dig(block);
-        }else if(['place_block','clear_build_cell','approach_build_site'].includes(candidate.skill))executionResult=await executeConstruction(bot,candidate,this.construction,assertActive);
+        }else if(['place_block','clear_build_cell','approach_build_site'].includes(candidate.skill))executionResult=await executeConstruction(bot,candidate,candidate.id.startsWith('annex:')?this.annexCorridor:this.construction,assertActive);
         else if(candidate.skill==='attack_entity')executionResult=await executeCombat(bot,candidate,assertActive);
         else if(['eat_food','hunt_food'].includes(candidate.skill))executionResult=await executeFood(bot,candidate,assertActive);
         else if(['equip_gear','place_furnace','smelt_iron','recover_furnace'].includes(candidate.skill))executionResult=await executeEquipment(bot,candidate,assertActive);

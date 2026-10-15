@@ -6,7 +6,11 @@ import {validateDecision} from '../policies/index.mjs';
 import {surveySites,compileBlueprint,inspectConstruction} from './construction.mjs';
 import {homeFromBuilding} from './home.mjs';
 import {attributedChat} from '../planners/chat-source.mjs';
+import {corridorBlueprint,inspectCorridor} from './annex.mjs';
+import {AutonomousTasks} from '../autonomy/tasks.mjs';
 const environment=new MinecraftEnvironment(),trajectory=new Trajectory();await environment.connect();
+const autonomous=new AutonomousTasks({base:`http://127.0.0.1:${process.env.API_PORT??18765}`});await autonomous.initialize();
+try{environment.annexCorridor=JSON.parse(await readFile('.runtime/annex-corridor.json','utf8'));}catch{}
 let lastAnnouncement=0;
 try{const saved=JSON.parse(await readFile('.runtime/active-construction.json','utf8'));if(saved)environment.construction=compileBlueprint({...saved,site_id:saved.site.id},[saved.site]);}catch{}
 let previous;try{previous=JSON.parse((await readFile('.runtime/previous-house.json','utf8')).replace(/^\uFEFF/,''));}catch{}
@@ -25,6 +29,17 @@ const server=createServer(async(req,res)=>{
   const reply=(status,data)=>{res.writeHead(status,{'content-type':'application/json'});res.end(JSON.stringify(data));};
   try{
     const path=new URL(req.url,'http://localhost').pathname;
+    if(req.method==='GET'&&path==='/tasks')return reply(200,autonomous.list());
+    const taskPath=path.match(/^\/tasks\/([a-f0-9-]{36})(?:\/(cancel|resume))?$/);
+    if(req.method==='GET'&&taskPath){const task=autonomous.tasks.get(taskPath[1]);return reply(task?200:404,task??{error:'task_not_found'});}
+    if(req.method==='GET'&&path==='/annex-verification'){
+      const b=environment.bot,home=environment.home,passage=environment.annexCorridor;
+      const old=protectedBuildings.find(p=>p.site.origin.x+1===home.point.x&&p.site.origin.z+2===home.point.z);
+      const preserved=(old?.cells??[]).filter(q=>!(passage?.clear??[]).some(p=>p.x===q.x&&p.y===q.y&&p.z===q.z));
+      const changed=preserved.filter(q=>b.blockAt(b.entity.position.clone().set(q.x,q.y,q.z))?.name!==q.material);
+      return reply(200,{original_expected_preserved:preserved.length,original_preserved:preserved.length-changed.length,unexpected_changes:changed,annex:inspectConstruction(b,environment.construction)?.complete,corridor:inspectCorridor(b,passage),nearby_chests:b.findBlocks({matching:b.registry.blocksByName.chest.id,maxDistance:8,count:8}).length});
+    }
+    if(path==='/annex-corridor'&&req.method==='GET')return reply(200,inspectCorridor(environment.bot,environment.annexCorridor));
     if(req.method==='GET' && path==='/health')return reply(200,{status:'ok',minecraft_connected:environment.ready,dead:environment.dead,death_count:environment.deathCount});
     if(req.method==='GET' && path==='/observe')return reply(200,environment.observe());
     if(req.method==='GET' && path==='/actions'){installMiningProtection();return reply(200,environment.actions());}
@@ -37,6 +52,17 @@ const server=createServer(async(req,res)=>{
     if(req.method!=='POST')return reply(404,{error:'not_found'});
     let text='';for await(const chunk of req){text+=chunk;if(text.length>65536)return reply(413,{error:'body_too_large'});}
     const body=JSON.parse(text||'{}');
+    if(path==='/tasks')return reply(201,await autonomous.submit(body.goal));
+    if(taskPath&&taskPath[2]==='cancel')return reply(200,autonomous.cancel(taskPath[1]));
+    if(taskPath&&taskPath[2]==='resume')return reply(202,await autonomous.resume(taskPath[1]));
+    if(body.expected_goal!==undefined&&body.expected_goal!==environment.goal)return reply(409,{error:'goal_changed'});
+    if(path==='/annex-corridor'){
+      if(environment.current||environment.actionOwner)return reply(409,{error:'busy'});
+      if(!inspectConstruction(environment.bot,environment.construction)?.complete)return reply(409,{error:'annex_not_complete'});
+      environment.annexCorridor=corridorBlueprint(environment.home,environment.construction,environment.observe().inventory);
+      await writeFile('.runtime/annex-corridor.json',JSON.stringify(environment.annexCorridor));
+      return reply(200,inspectCorridor(environment.bot,environment.annexCorridor));
+    }
     if(path==='/home'){
       if(environment.current)return reply(409,{error:'busy'});
       environment.home=homeFromBuilding(environment.construction);
@@ -56,7 +82,7 @@ const server=createServer(async(req,res)=>{
     if(path==='/construction'){
       if(environment.current)return reply(409,{error:'busy'});
       if(body.blueprint===null){
-        if(inspectConstruction(environment.bot,environment.construction)?.complete&&!protectedBuildings.some(b=>b.site.id===environment.construction.site.id))protectedBuildings.push(environment.construction);
+        if(inspectConstruction(environment.bot,environment.construction)?.missing.length===0&&!protectedBuildings.some(b=>b.site.id===environment.construction.site.id))protectedBuildings.push(environment.construction);
         environment.construction=null;await mkdir('.runtime',{recursive:true});
         await writeFile('.runtime/completed-buildings.json',JSON.stringify(protectedBuildings));
         await writeFile('.runtime/active-construction.json','null');return reply(200,{status:'cleared'});
@@ -65,7 +91,7 @@ const server=createServer(async(req,res)=>{
       await mkdir('.runtime',{recursive:true});await writeFile('.runtime/active-construction.json',JSON.stringify(environment.construction));
       return reply(200,inspectConstruction(environment.bot,environment.construction));
     }
-    if(path==='/goal'){if(body.expected_goal!==undefined&&body.expected_goal!==environment.goal)return reply(409,{error:'goal_changed'});if(body.goal!==null && typeof body.goal!=='string')return reply(400,{error:'invalid_goal'});environment.goal=body.goal;environment.subgoal=body.subgoal??null;return reply(200,{goal:environment.goal,subgoal:environment.subgoal});}
+    if(path==='/goal'){if(body.expected_goal!==undefined&&body.expected_goal!==environment.goal)return reply(409,{error:'goal_changed'});if(body.goal!==null && typeof body.goal!=='string')return reply(400,{error:'invalid_goal'});environment.goal=body.goal;environment.subgoal=body.subgoal??null;return reply(200,{goal:environment.goal,subgoal:environment.subgoal,execution_started:false,execution_endpoint:'/tasks'});}
     if(path==='/idle-defense'){
       if(typeof body.token!=='string'||!/^idle-defense:[a-f0-9-]{36}$/.test(body.token))throw new Error('invalid_defense_token');
       if(body.release){if(environment.goal===body.token){environment.goal=null;environment.subgoal=null;}return reply(200,{released:true});}
@@ -103,7 +129,7 @@ const server=createServer(async(req,res)=>{
       return reply(200,{...result,run_id:row.run_id,step:row.step});
     }
     reply(404,{error:'not_found'});
-  }catch(error){reply(error.message==='busy'?409:400,{error:error.message});}
+  }catch(error){reply(['busy','task_busy','minecraft_not_ready','task_not_resumable'].includes(error.message)?409:400,{error:error.message});}
 });
 server.listen(Number(process.env.API_PORT??18765),'127.0.0.1',()=>console.log('Environment API ready on loopback'));
-for(const signal of ['SIGINT','SIGTERM'])process.on(signal,()=>{environment.close();server.close(()=>process.exit(0));});
+for(const signal of ['SIGINT','SIGTERM'])process.once(signal,async()=>{await autonomous.close();environment.close();server.close(()=>process.exit(0));});

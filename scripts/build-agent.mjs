@@ -57,7 +57,7 @@ try{
     event('resumed',{previous_run:resumedReport.run_id,inventory:(await observe()).inventory});
   }else{
   await jsonRequest(`${base}/construction`,{body:{blueprint:null}});
-  const state=await observe(),sites=await jsonRequest(`${base}/build-sites`);if(!sites.length)throw new Error('no_flat_build_site');
+  const state=await observe();let sites=await jsonRequest(`${base}/build-sites`);if(process.env.BUILD_SITE_ID)sites=sites.filter(s=>s.id===process.env.BUILD_SITE_ID);if(!sites.length)throw new Error('no_flat_build_site');
   event('start',{run_id:runId,goal,inventory:state.inventory,sites});
   const feedback=[];
   for(let attempt=0;attempt<3;attempt++){

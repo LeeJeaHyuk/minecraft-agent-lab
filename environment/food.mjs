@@ -10,13 +10,14 @@ export function completedHuntAfterDefense(bot,candidate,before){
   return {skill:'hunt_food',mob:candidate.arguments.mob,inventory_before:before,inventory_after:after,completion_verified_after_defense:true};
 }
 export function foodActions(bot){
-  const out=bot.food<20?bot.inventory.items().filter(i=>foods.has(i.name)).map(i=>({id:`eat:${i.name}`,skill:'eat_food',arguments:{item:i.name}})):[];
+  const emergency=bot.health<12&&!bot.inventory.items().some(i=>foods.has(i.name));
+  const out=bot.food<20?bot.inventory.items().filter(i=>foods.has(i.name)||emergency&&i.name==='rotten_flesh').map(i=>({id:`eat:${i.name}`,skill:'eat_food',arguments:{item:i.name}})):[];
   for(const e of Object.values(bot.entities).filter(e=>animals.has(e.name)&&e.position.distanceTo(bot.entity.position)<=48).sort((a,b)=>a.position.distanceTo(bot.entity.position)-b.position.distanceTo(bot.entity.position)).slice(0,4))out.push({id:`hunt:${e.id}`,skill:'hunt_food',arguments:{entity_id:e.id,mob:e.name,x:e.position.x,y:e.position.y,z:e.position.z}});
   return out;
 }
 export async function executeFood(bot,candidate,assertActive){
   if(candidate.skill==='eat_food'){
-    const item=bot.inventory.items().find(i=>i.name===candidate.arguments.item);if(!item||!foods.has(item.name))throw new Error('inventory_missing');
+    const item=bot.inventory.items().find(i=>i.name===candidate.arguments.item);if(!item||!(foods.has(item.name)||item.name==='rotten_flesh'&&bot.health<12))throw new Error('inventory_missing');
     const before=inventoryCounts(bot),food=bot.food;bot.deactivateItem?.();await bot.equip(item,'hand');assertActive();
     let transportError;try{await bot.consume();}catch(error){transportError=error;}assertActive();
     for(let i=0;i<25&&((inventoryCounts(bot)[item.name]??0)!==before[item.name]-1||bot.food<=food);i++){await delay(100);assertActive();}
